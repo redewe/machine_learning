@@ -12,10 +12,8 @@ sys.path.append("../tools/")
 
 from feature_format import featureFormat, targetFeatureSplit
 from tester import dump_classifier_and_data, test_classifier
-from tabulate import tabulate
-import matplotlib.pyplot as plt
 
-#Import all sklearn libraries
+#Import all sklearn libraries for machine learning functions
 from sklearn.pipeline import Pipeline, FeatureUnion
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import MinMaxScaler, scale 
@@ -25,6 +23,11 @@ from sklearn.naive_bayes import GaussianNB
 from sklearn.svm import LinearSVC, SVC
 from sklearn import tree
 from sklearn.neighbors import KNeighborsClassifier
+
+#Import functions for pretty tables and graphing
+from tabulate import tabulate
+import matplotlib.pyplot as plt
+
 
 
 ### Task 1: Select what features you'll use.
