@@ -1,4 +1,6 @@
 #!/usr/bin/python
+import warnings
+warnings.filterwarnings('ignore')
 
 #Import all libraries
 import sys
@@ -7,22 +9,22 @@ import numpy as np
 import pandas as pd
 sys.path.append("../tools/")
 
+
 from feature_format import featureFormat, targetFeatureSplit
 from tester import dump_classifier_and_data, test_classifier
 from tabulate import tabulate
 import matplotlib.pyplot as plt
 
 #Import all sklearn libraries
-from sklearn.metrics import classification_report, accuracy_score
-from sklearn.pipeline import Pipeline
-from sklearn.svm import LinearSVC
+from sklearn.pipeline import Pipeline, FeatureUnion
 from sklearn.decomposition import PCA
-from sklearn.preprocessing import MinMaxScaler
-from sklearn.feature_selection import SelectKBest, chi2
-from sklearn.model_selection import StratifiedShuffleSplit, GridSearchCV, train_test_split
+from sklearn.preprocessing import MinMaxScaler, scale 
+from sklearn.feature_selection import SelectKBest, f_classif, SelectPercentile, mutual_info_classif
+from sklearn.model_selection import train_test_split, GridSearchCV, StratifiedShuffleSplit
 from sklearn.naive_bayes import GaussianNB
+from sklearn.svm import LinearSVC, SVC
 from sklearn import tree
-from time import time
+from sklearn.neighbors import KNeighborsClassifier
 
 
 ### Task 1: Select what features you'll use.
@@ -86,13 +88,9 @@ print("Email Address with Max Value :", email)
 df_new = df_new[df_new.index != email]
 data_dict.pop( "TOTAL", None ) 
 
-df_NaN = df[df.index != email].groupby("Names").apply(lambda column: (column == "NaN").sum())
-tabulate_data(df_new)	
-
 #CREATE SCATTER PLOT
 email = df_new[df_new['total_payments'] == df_new['total_payments'].max()].index[0]
 print("Email Address with Max Value #2 :", email)
-
 
 def scatter_plot(imgname):
 	fig, ax = plt.subplots()
@@ -108,19 +106,21 @@ def scatter_plot(imgname):
 scatter_plot("Outlier1.png")
 
 	
-#Drop Outlier 2 - Kenneth Lay
-df_new = df_new[df_new.index != email]
+#Drop Outlier 2 - Kenneth Lay and THE TRAVEL AGENCY IN THE PARK
+park = "THE TRAVEL AGENCY IN THE PARK"
+df_new = df_new[(df_new.index != email) & (df_new.index != park) ]
 data_dict.pop( email, None ) 
+data_dict.pop( park, None ) 
 
 scatter_plot("Outlier2.png")
 
 #Final table after discarding outliers
-df_NaN = df[(df.index != email) & (df.index != "TOTAL")].groupby("Names").apply(lambda column: (column == "NaN").sum())
+df_NaN = df[(df.index != email) & (df.index != "TOTAL") & (df.index != park)].groupby("Names").apply(lambda column: (column == "NaN").sum())
 tabulate_data(df_new)	
 
 #Final table with POI
 df_new_poi = df_new[df_new["poi"] == 1]
-df_NaN = df[(df['poi'] == 1) & (df.index != email) & (df.index != "TOTAL")].groupby("Names").apply(lambda column: (column == "NaN").sum())
+df_NaN = df[(df['poi'] == 1) & (df.index != email) & (df.index != "TOTAL")& (df.index != park)].groupby("Names").apply(lambda column: (column == "NaN").sum())
 tabulate_data(df_new_poi)	
 
 
@@ -140,208 +140,94 @@ for key, value in my_dataset.items():
 		my_dataset[key]['stock_value_ratio'] = ( float(my_dataset[key]['total_stock_value']) - float(my_dataset[key]['total_payments']))/float(my_dataset[key]['total_payments'])
 		
 
-		
+#####################################################################		
+####VALIDATING ORIGINAL DATASET							  ###########
+#####################################################################
+#####################################################################
+
+
 ### Extract features and labels from dataset for local testing
 data = featureFormat(my_dataset, features_list, sort_keys = True)
 labels, features = targetFeatureSplit(data)
 
-#scale data using MinMaxScaler
-
-scaler = MinMaxScaler()
-features_scaled= scaler.fit_transform(features)
-
+#Use same cv as tester.py
+cv = StratifiedShuffleSplit(100, random_state = 42)
 
 #### FEATURE SELECTION
-#Compare reduction techniques between KBest and PCA http://scikit-learn.org/stable/auto_examples/plot_compare_reduction.html#sphx-glr-auto-examples-plot-compare-reduction-py
+#Compare reduction techniques between KBest and PCA 
+#Compare algorithms at the same time between GaussianNB and DecisionTreeClassifier
 
-#use Pipeline 
-pipe = Pipeline(memory=None, steps=[
+# Select parameters and algorithms to compare
+tree_dcf = tree.DecisionTreeClassifier()
+reduce_dim = [PCA(random_state = 42), SelectKBest(), SelectPercentile()]
+classifiers = [GaussianNB(), LinearSVC(random_state = 42), KNeighborsClassifier(), SVC(random_state = 42), tree_dcf]
+
+pipe = Pipeline(steps=[
     ('reduce_dim', PCA()),
     ('classify', LinearSVC())
 ])
+param_grid = [{
+		'reduce_dim': reduce_dim,
+		'classify': classifiers
+    }
+	]
 
-N_FEATURES_OPTIONS = [2, 4, 8, 10]
-C_OPTIONS = [1, 10, 100, 1000]
-
-param_grid = [
-    {
-        'reduce_dim': [PCA()],
-        'reduce_dim__n_components': N_FEATURES_OPTIONS,
-        'classify__C': C_OPTIONS
-    },
-    {
-        'reduce_dim': [SelectKBest(chi2)],
-        'reduce_dim__k': N_FEATURES_OPTIONS,
-        'classify__C': C_OPTIONS
-    },
-]
-reducer_labels = ['PCA', 'KBest(chi2)']
-cv = StratifiedShuffleSplit(n_splits=100, random_state= 42)
-
-#Compare feature selection with Grid SearchCV and display chart
-grid = GridSearchCV(pipe, cv=cv, n_jobs=1, param_grid=param_grid)
-grid.fit(features_scaled, labels)
-print("Grid Search CV Best Params: ",grid.best_params_)
-
-#Generate mean scores
-mean_scores = np.array(grid.cv_results_['mean_test_score'])
-# scores are in the order of param_grid iteration, which is alphabetical
-mean_scores = mean_scores.reshape(len(C_OPTIONS), -1, len(N_FEATURES_OPTIONS))
-# select score for best C
-mean_scores = mean_scores.max(axis=0)
-bar_offsets = (np.arange(len(N_FEATURES_OPTIONS)) *
-               (len(reducer_labels) + 1) + .5)
-
-plt.figure()
-COLORS = 'bgrcmyk'
-for i, (label, reducer_scores) in enumerate(zip(reducer_labels, mean_scores)):
-    plt.bar(bar_offsets + i, reducer_scores, label=label, color=COLORS[i])
-
-plt.title("Comparing feature reduction techniques")
-plt.xlabel('Reduced number of features')
-plt.xticks(bar_offsets + len(reducer_labels) / 2, N_FEATURES_OPTIONS)
-plt.ylabel('Digit classification accuracy')
-plt.ylim((0, 1))
-plt.legend(loc='lower right')
-plt.savefig("Feature_Selection.png")
-
-
-### Task 4: Try a varity of classifiers
-### Please name your classifier clf for easy export below.
-### Note that if you want to do PCA or other multi-stage operations,
-### you'll need to use Pipelines. For more info:
-### http://scikit-learn.org/stable/modules/pipeline.html
-
-# Provided to give you a starting point. Try a variety of classifiers.
-
-tree_dcf = tree.DecisionTreeClassifier(min_samples_split=2, random_state = 42)
-
-pipe_NB = Pipeline(memory=None, steps=[
-    ('PCA', PCA(n_components=10)),
-    ('classify_NB', GaussianNB())
-])
-
-pipe_tree = Pipeline(memory=None, steps=[
-    ('PCA', PCA(n_components=10)),
-    ('classify_tree', tree_dcf)
-])
-
-### Task 5: Tune your classifier to achieve better than .3 precision and recall 
-### using our testing script. Check the tester.py script in the final project
-### folder for details on the evaluation method, especially the test_classifier
-### function. Because of the small size of the dataset, the script uses
-### stratified shuffle split cross validation. For more info: 
-### http://scikit-learn.org/stable/modules/generated/sklearn.cross_validation.StratifiedShuffleSplit.html
-
-# Example starting point. Try investigating other evaluation techniques!
-features_train, features_test, labels_train, labels_test = \
-    train_test_split(features, labels, test_size=0.3, random_state=42)
-
-features_scaled_train = scaler.fit_transform(features_train)
-features_scaled_test = scaler.fit_transform(features_test)
-
-### Evaluate effects of scaling with PCA
-#PCA before scaling
-pca = PCA(n_components=10)
-pca.fit(features_train, labels_train)
-pca.transform(features_test)
-
-# summarize components
-print("Explained Variance: ", pca.explained_variance_ratio_)  
-
-#PCA after scaling
-pca_new = PCA(n_components=10)
-pca_new.fit(features_scaled_train, labels_train)
-pca_new.transform(features_scaled_test)
-
-# summarize components
-print("Explained Variance (with scaled features): ", pca_new.explained_variance_ratio_)  
-print("##########################")
-
-### TEST NB SCORE WITH SCALED AND UNSCALED FEATURES
-pipe_NB_test = pipe_NB.fit(features_train, labels_train)
-pred_test = pipe_NB_test.predict(features_test)
-print("GNB Score with Unscaled Features: ", accuracy_score(pred_test, labels_test))
-
-
-pipe_NB.fit(features_scaled_train, labels_train)
-pred2 = pipe_NB.predict(features_scaled_test)
-print("GNB Score with Scaled Features: ", accuracy_score(pred2, labels_test))
-print("##########################")
-
-
-####### TESTING DECISION TREE NOW
-pipe_tree_test = pipe_tree.fit(features_train, labels_train)
-pred = pipe_tree_test.predict(features_test)
-acc = accuracy_score(pred, labels_test)
-print("DecisionTree Score with Unscaled features: ", acc)
-
-
-pipe_tree.fit(features_scaled_train, labels_train)
-pred = pipe_tree.predict(features_scaled_test)
-acc = accuracy_score(pred, labels_test)
-print("DecisionTree Score with Scaled features: ", acc)
+def CompareModels(pipe, param_grid, features, labels, features_list):
+	#Compare feature selection with Grid SearchCV
+	grid = GridSearchCV(pipe, cv=cv, param_grid=param_grid, scoring='f1')
+	grid.fit(features, labels)
 	
-print("##########################")
-	
-####### TUNING TREE	
-max_depth = range(1,20)
-param_grid = [
-	{
-	'classify_tree__criterion' : ["gini"],
-	'classify_tree__splitter' : ["best", "random"],
-	'classify_tree__max_depth':max_depth
-	},
-	{
-	'classify_tree__criterion' : ["entropy"],
-	'classify_tree__splitter' : ["best", "random"],
-	'classify_tree__max_depth':max_depth
-	}
-]
+	#Validate classifier with the best settings
+	clf = grid.best_estimator_
+	test_classifier(clf, my_dataset, features_list)
+	return clf
 
-clf = GridSearchCV(
-	pipe_tree, 
-	cv=cv, 
-	param_grid=param_grid)
-clf.fit(features_scaled_train, labels_train)
-clf.predict(features_scaled_test)
-print("Grid Search CV Best Params",clf.best_params_)
-print("Grid Search CV Score",clf.score(features_scaled_test,labels_test ))
+CompareModels(pipe, param_grid, features, labels, features_list)
 
+#####################################################################		
+####VALIDATING NEW FEATURE 								  ###########
+#####################################################################
+#####################################################################
 
-y_true, y_pred = labels_test, clf.predict(features_scaled_test)
-print(classification_report(y_true, y_pred))
-
-
-#Test score with new feature
+#add new feature to list
 features_list_new = features_list
 features_list_new.append('stock_value_ratio')	
 data2 = featureFormat(my_dataset, features_list_new, sort_keys = True)
 labels_new, features_new = targetFeatureSplit(data2)
 
-features_train_new, features_test_new, labels_train_new, labels_test_new = \
-    train_test_split(features_new, labels_new, test_size=0.3, random_state=42)
+#CompareModels(pipe, param_grid, features_new, labels_new, features_list_new)
 
-features_scaled_train_new = scaler.fit_transform(features_train_new)
-features_scaled_test_new = scaler.fit_transform(features_test_new)
-							
-clf2 = GridSearchCV(
-	pipe_tree, 
-	cv=cv, 
-	param_grid=param_grid)
-clf2.fit(features_scaled_train_new, labels_train_new)
-clf2.predict(features_scaled_test_new)
-print("Grid Search CV Best Params - with new feature: ",clf2.best_params_)
-print("Grid Search CV Score - with new feature: ",clf2.score(features_scaled_test_new,labels_test_new ))
-y_true_new, y_pred_new = labels_test_new, clf2.predict(features_scaled_test_new)
-print(classification_report(y_true_new, y_pred_new))
-
-### Task 6: Dump your classifier, dataset, and features_list so anyone can
-### check your results. You do not need to change anything below, but make sure
-### that the version of poi_id.py that you submit can be run on its own and
-### generates the necessary .pkl files for validating your results.
-
-dump_classifier_and_data(clf2, my_dataset, features_list_new)
+#####################################################################		
+#### FEATURE SCALING									  ###########
+#####################################################################
+#####################################################################
 
 
+pipe = Pipeline(steps=[
+	('scalers', MinMaxScaler()),
+    ('reduce_dim', PCA()),
+    ('classify', LinearSVC())
+])
+#CompareModels(pipe, param_grid, features, labels, features_list)
 
+
+#####################################################################		
+#### TUNING PARAMETERS  								  ###########
+#####################################################################
+#####################################################################
+
+#Restate all variables
+pipe = Pipeline(steps=[
+    ('reduce_dim', SelectKBest()),
+    ('classify', GaussianNB())
+])
+
+# Set parameters to compare
+param_grid = [{
+		'reduce_dim__score_func': [f_classif,  mutual_info_classif],
+		'reduce_dim__k': range(1,(len(features_list) - 2))
+    }
+	]
+clf = CompareModels(pipe, param_grid, features, labels, features_list)
+
+dump_classifier_and_data(clf, my_dataset, features_list)
