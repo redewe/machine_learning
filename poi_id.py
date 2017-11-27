@@ -20,7 +20,8 @@ from sklearn.preprocessing import MinMaxScaler, scale
 from sklearn.feature_selection import SelectKBest, f_classif, SelectPercentile, mutual_info_classif
 from sklearn.model_selection import train_test_split, GridSearchCV, StratifiedShuffleSplit
 from sklearn.naive_bayes import GaussianNB
-from sklearn.svm import LinearSVC, SVC
+from sklearn.svm import LinearSVC
+from sklearn.ensemble import RandomForestClassifier
 from sklearn import tree
 from sklearn.neighbors import KNeighborsClassifier
 
@@ -161,17 +162,35 @@ cv = StratifiedShuffleSplit(100, random_state = 42)
 #Compare algorithms at the same time between GaussianNB and DecisionTreeClassifier
 
 # Select parameters and algorithms to compare
-tree_dcf = tree.DecisionTreeClassifier()
 reduce_dim = [PCA(random_state = 42), SelectKBest(), SelectPercentile()]
-classifiers = [GaussianNB(), LinearSVC(random_state = 42), KNeighborsClassifier(), SVC(random_state = 42), tree_dcf]
 
 pipe = Pipeline(steps=[
-    ('reduce_dim', PCA()),
-    ('classify', LinearSVC())
+    ('reduce_dim', PCA(random_state = 42)),
+    ('classify', LinearSVC(random_state = 42))
 ])
 param_grid = [{
 		'reduce_dim': reduce_dim,
-		'classify': classifiers
+		'classify': [GaussianNB()]
+    },
+	{
+		'reduce_dim': reduce_dim,
+		'classify': [LinearSVC(random_state = 42)],
+		'classify__dual': [True, False]
+    },
+	{
+		'reduce_dim': reduce_dim,
+		'classify': [KNeighborsClassifier()],
+		'classify__algorithm': ['auto', 'ball_tree', 'kd_tree', 'brute']
+    },
+	{
+		'reduce_dim': reduce_dim,
+		'classify': [RandomForestClassifier(random_state = 42)],
+		'classify__criterion': ['gini', 'entropy']
+    },
+	{
+		'reduce_dim': reduce_dim,
+		'classify': [tree.DecisionTreeClassifier()],
+		'classify__criterion': ['gini', 'entropy']
     }
 	]
 
@@ -188,6 +207,20 @@ def CompareModels(pipe, param_grid, features, labels, features_list):
 CompareModels(pipe, param_grid, features, labels, features_list)
 
 #####################################################################		
+#### FEATURE SCALING									  ###########
+#####################################################################
+#####################################################################
+
+
+pipe = Pipeline(steps=[
+	('scalers', MinMaxScaler()),
+    ('reduce_dim', PCA(random_state = 42)),
+    ('classify', LinearSVC(random_state = 42))
+])
+#CompareModels(pipe, param_grid, features, labels, features_list)
+
+
+#####################################################################		
 ####VALIDATING NEW FEATURE 								  ###########
 #####################################################################
 #####################################################################
@@ -200,18 +233,7 @@ labels_new, features_new = targetFeatureSplit(data2)
 
 #CompareModels(pipe, param_grid, features_new, labels_new, features_list_new)
 
-#####################################################################		
-#### FEATURE SCALING									  ###########
-#####################################################################
-#####################################################################
 
-
-pipe = Pipeline(steps=[
-	('scalers', MinMaxScaler()),
-    ('reduce_dim', PCA()),
-    ('classify', LinearSVC())
-])
-#CompareModels(pipe, param_grid, features, labels, features_list)
 
 
 #####################################################################		
@@ -221,16 +243,18 @@ pipe = Pipeline(steps=[
 
 #Restate all variables
 pipe = Pipeline(steps=[
-    ('reduce_dim', SelectKBest()),
-    ('classify', GaussianNB())
+    ('scalers', MinMaxScaler()),
+	('reduce_dim', PCA(random_state = 42)),
+    ('classify', tree.DecisionTreeClassifier(criterion = 'gini'))
 ])
 
 # Set parameters to compare
 param_grid = [{
-		'reduce_dim__score_func': [f_classif,  mutual_info_classif],
-		'reduce_dim__k': range(1,(len(features_list) - 2))
+		'scalers__copy': [True, False] ,
+		'reduce_dim__n_components': range(1,(len(features_list) - 2)),
+		'classify__splitter': ['best', 'random'] ,
     }
 	]
-clf = CompareModels(pipe, param_grid, features, labels, features_list)
+clf = CompareModels(pipe, param_grid, features_new, labels_new, features_list_new)
 
-dump_classifier_and_data(clf, my_dataset, features_list)
+dump_classifier_and_data(clf, my_dataset, features_list_new)
