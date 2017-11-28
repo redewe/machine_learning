@@ -59,7 +59,8 @@ print("##################")
 
 #Clean up NaN values in data
 df2 = df.replace("NaN", 0)
-df_NaN = df.groupby("Names").apply(lambda column: (column == "NaN").sum())
+df_NaN = df.groupby("Names")
+#df_NaN.apply(lambda column: (column == "NaN").sum())
 
 #Print data in table format
 def tabulate_data(df_obj):	
@@ -77,7 +78,8 @@ tabulate_data(df2)
 #Filter DF for POI only
 df_poi = df2[df2['poi'] == 1]
 df_poi = df_poi[features_list]
-df_NaN = df[df['poi'] == 1].groupby("Names").apply(lambda column: (column == "NaN").sum())
+df_NaN = df[df['poi'] == 1].groupby("Names")
+#df_NaN.apply(lambda column: (column == "NaN").sum())
 tabulate_data(df_poi)	
 
 
@@ -119,12 +121,14 @@ data_dict.pop( park, None )
 scatter_plot("Outlier2.png")
 
 #Final table after discarding outliers
-df_NaN = df[(df.index != email) & (df.index != "TOTAL") & (df.index != park)].groupby("Names").apply(lambda column: (column == "NaN").sum())
+df_NaN = df[(df.index != email) & (df.index != "TOTAL") & (df.index != park)].groupby("Names")
+#df_NaN.apply(lambda column: (column == "NaN").sum())
 tabulate_data(df_new)	
 
 #Final table with POI
 df_new_poi = df_new[df_new["poi"] == 1]
-df_NaN = df[(df['poi'] == 1) & (df.index != email) & (df.index != "TOTAL")& (df.index != park)].groupby("Names").apply(lambda column: (column == "NaN").sum())
+df_NaN = df[(df['poi'] == 1) & (df.index != email) & (df.index != "TOTAL")& (df.index != park)].groupby("Names")
+#df_NaN.apply(lambda column: (column == "NaN").sum())
 tabulate_data(df_new_poi)	
 
 
